@@ -19,10 +19,26 @@ FPS = 25
 VOICE = "ar-SA-HamedNeural"
 VOICE_RATE = "-10%"
 
-FONT_PATH = (
-    "/usr/share/fonts/truetype/noto/"
-    "NotoSansArabic-Regular.ttf"
-)
+
+def find_arabic_font():
+    candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+
+    for path in candidates:
+        if os.path.isfile(path):
+            print(f"Using Arabic font: {path}")
+            return path
+
+    raise FileNotFoundError(
+        "No Arabic font found. Install fonts-noto-core."
+    )
+
+
+FONT_PATH = find_arabic_font()
+
 
 OUTPUT_FILE = "test-reel.mp4"
 

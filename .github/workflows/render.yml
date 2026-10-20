@@ -49,21 +49,24 @@ jobs:
           test -s narration.mp3
           echo "Arabic narration generated."
 
-      - name: Generate test video
+      
+      - name: Generate video with Arabic narration
         run: |
           ffmpeg -y \
             -f lavfi \
-            -i "color=c=0x14213d:s=1080x1920:r=25:d=15" \
-            -f lavfi \
-            -i "sine=frequency=440:sample_rate=44100:duration=15" \
+            -i "color=c=0x14213d:s=1080x1920:r=25" \
+            -i narration.mp3 \
             -c:v libx264 \
             -preset ultrafast \
             -pix_fmt yuv420p \
             -c:a aac \
             -b:a 128k \
-            -t 15 \
+            -shortest \
             -movflags +faststart \
             test-reel.mp4
+
+          test -s test-reel.mp4
+
 
       - name: Validate MP4
         run: |

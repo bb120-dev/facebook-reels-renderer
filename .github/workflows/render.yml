@@ -36,6 +36,18 @@ jobs:
         run: |
           ffmpeg -version
           ffprobe -version
+      
+      - name: Generate Arabic narration
+        run: |
+          python -m pip install --quiet edge-tts
+
+          edge-tts \
+            --voice ar-SY-AmanyNeural \
+            --text "هل تعلم أن الذكاء الاصطناعي يستطيع تحليل الصور وفهم الكلام والمساعدة في حل المشكلات؟ تابعنا لاكتشاف المزيد من أسرار التكنولوجيا." \
+            --write-media narration.mp3
+
+          test -s narration.mp3
+          echo "Arabic narration generated."
 
       - name: Generate test video
         run: |

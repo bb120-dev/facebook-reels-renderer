@@ -10,28 +10,65 @@ permissions:
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
+      # 1. Download repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Install dependencies
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y \
+            ffmpeg \
+            fonts-dejavu-core \
+            fonts-noto-core
 
           python -m pip install \
             edge-tts \
             pillow \
             arabic-reshaper \
             python-bidi \
-            cloudinary
+            cloudinary \
+            requests
 
+      # 3. Generate AI scene images
+      - name: Generate AI images with Cloudflare
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          python image_generator.py
+
+      # 4. Verify generated images
+      - name: Validate generated images
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          for i in range(1, 4):
+              path = Path(f"images/scene{i}.jpg")
+
+              if not path.exists():
+                  raise FileNotFoundError(
+                      f"Missing image: {path}"
+                  )
+
+              with Image.open(path) as img:
+                  img.verify()
+
+              print(f"Image {i} validated: {path}")
+          PY
+
+      # 5. Generate Arabic video
       - name: Generate Arabic Reel
         run: |
           python render.py
 
+      # 6. Validate MP4
       - name: Validate video
         run: |
           test -s test-reel.mp4
@@ -49,6 +86,7 @@ jobs:
             -of default=noprint_wrappers=1 \
             test-reel.mp4
 
+      # 7. Upload video artifact
       - name: Upload video artifact
         uses: actions/upload-artifact@v4
         with:
@@ -57,6 +95,7 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
+      # 8. Upload MP4 to Cloudinary
       - name: Upload MP4 to Cloudinary
         env:
           CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
@@ -94,7 +133,9 @@ jobs:
           video_url = result.get("secure_url")
 
           if not video_url or not video_url.startswith("https://"):
-              raise RuntimeError("Invalid Cloudinary video URL")
+              raise RuntimeError(
+                  "Invalid Cloudinary video URL"
+              )
 
           print("Upload successful!")
           print("Video URL:", video_url)

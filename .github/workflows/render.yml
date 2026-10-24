@@ -1,1 +1,100 @@
+name: Render Facebook Reel
+
+on:
+  workflow_dispatch:
+    inputs:
+      payload_b64:
+        description: "Base64 UTF-8 JSON from n8n; leave blank for demo"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core fonts-noto-core
+          python -m pip install edge-tts pillow arabic-reshaper python-bidi cloudinary
+
+      - name: Decode dynamic video content
+        env:
+          PAYLOAD_B64: ${{ inputs.payload_b64 }}
+        run: |
+          python - <<'PY'
+          import base64, json, os
+          from pathlib import Path
+          encoded = os.environ.get("PAYLOAD_B64", "").strip()
+          if encoded:
+              payload = json.loads(base64.b64decode(encoded, validate=True).decode("utf-8"))
+              if payload.get("type") != "video" or len(payload.get("scenes", [])) != 3:
+                  raise ValueError("Invalid video payload")
+              Path("reel_content.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+              print("Dynamic video payload decoded")
+          else:
+              print("Manual demo mode")
+          PY
+
+      - name: Generate AI images with Cloudflare
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: python image_generator.py
+
+      - name: Validate generated images
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          for i in range(1, 4):
+              path = Path(f"images/scene{i}.jpg")
+              with Image.open(path) as img:
+                  img.verify()
+              print(f"Validated {path}")
+          PY
+
+      - name: Generate Arabic Reel
+        run: python render.py
+
+      - name: Validate video
+        run: |
+          test -s test-reel.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height -of default=noprint_wrappers=1 test-reel.mp4
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 test-reel.mp4
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: facebook-reel-${{ github.run_id }}
+          path: test-reel.mp4
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload MP4 to Cloudinary
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          python - <<'PY'
+          import os
+          import cloudinary
+          import cloudinary.uploader
+          cloudinary.config(cloud_name=os.environ["CLOUDINARY_CLOUD_NAME"], api_key=os.environ["CLOUDINARY_API_KEY"], api_secret=os.environ["CLOUDINARY_API_SECRET"], secure=True)
+          result = cloudinary.uploader.upload("test-reel.mp4", resource_type="video", folder="facebook-reels", public_id=f"reel-{os.environ['RUN_ID']}-{os.environ['RUN_ATTEMPT']}", overwrite=False, timeout=120)
+          url = result.get("secure_url")
+          if not url or not url.startswith("https://"):
+              raise RuntimeError("Invalid Cloudinary video URL")
+          print("Video URL:", url)
+          PY
 
